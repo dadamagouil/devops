@@ -19,6 +19,9 @@ marker="${RESULT_MARKER:-RESULT OK}"
 psql_() { psql "$url" -v ON_ERROR_STOP=1 -q "$@"; }
 
 [ "${STUB:-0}" = 1 ] && psql_ -f "$here/local_stub.sql"
+# With empty migrations/ or tests/ folders (a new project) the globs below would stay literal ("*.test.sql") and
+# psql would fail on a file that does not exist: nullglob makes the loops simply run zero times.
+shopt -s nullglob
 for f in "$dir"/migrations/*.sql; do
   echo "== migration $(basename "$f")"
   psql_ -f "$f"
