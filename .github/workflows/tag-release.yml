@@ -1,0 +1,107 @@
+name: Tag a release (reusable)
+
+# Creates the tag vX.Y.Z and its GitHub release (generated notes) on the commit the workflow runs on, but only
+# when something changed since the last release. For repositories that ship files (libraries, templates,
+# workflows) rather than an app; the Flutter app flow is `flutter-release.yml`.
+#
+# Why a workflow and not a `git push` of the tag: it uses the repository's own token (contents: write), so it
+# works from any machine or session that can start a workflow, without a personal access token.
+#
+# Wrap it in a manual workflow of the project:
+#   on:
+#     workflow_dispatch:
+#       inputs:
+#         bump:    { type: choice, options: [patch, minor, major], default: patch }
+#         version: { type: string, required: false, description: "Forced version, e.g. v1.0.0" }
+#   permissions:
+#     contents: write
+#   jobs:
+#     release:
+#       uses: dadamagouil/devops/.github/workflows/tag-release.yml@develop
+#       with:
+#         bump: ${{ inputs.bump }}
+#         version: ${{ inputs.version }}
+#         runner-labels: ${{ vars.RUNNER_LABELS || '["ubuntu-latest"]' }}
+on:
+  workflow_call:
+    inputs:
+      bump:
+        description: patch, minor or major (ignored when `version` is set)
+        type: string
+        default: patch
+      version:
+        description: Forced version (for example v1.0.0); released even if nothing changed since the last release
+        type: string
+        default: ""
+      runner-labels:
+        type: string
+        default: '["ubuntu-latest"]'
+    outputs:
+      released:
+        description: "true when a release was created, false when nothing had changed"
+        value: ${{ jobs.release.outputs.released }}
+      version:
+        description: The created version (empty when nothing was released)
+        value: ${{ jobs.release.outputs.version }}
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ${{ fromJSON(inputs.runner-labels) }}
+    outputs:
+      released: ${{ steps.create.outputs.released }}
+      version: ${{ steps.create.outputs.version }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history and tags: needed to know what changed since the last release.
+          fetch-depth: 0
+      - uses: dadamagouil/devops/.github/actions/prepare-runner@develop
+        with:
+          commands: "git gh"
+
+      - name: Did anything change since the last release?
+        id: changed
+        env:
+          FORCED: ${{ inputs.version }}
+        run: |
+          last=$(gh release list --limit 200 --json tagName --jq '.[].tagName' \
+            | grep -E '^v[0-9]+\.[0-9]+(\.[0-9]+)?$' | sort -V | tail -1 || true)
+          if [ -n "$FORCED" ] || [ -z "$last" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif [ "$(git rev-list --count "$last..HEAD" 2>/dev/null || echo 1)" -gt 0 ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Nothing changed since $last: no release created."
+          fi
+
+      - id: next
+        if: steps.changed.outputs.changed == 'true'
+        uses: dadamagouil/devops/.github/actions/next-version@develop
+        with:
+          bump: ${{ inputs.bump }}
+          version: ${{ inputs.version }}
+
+      - name: Create the tag and the release
+        id: create
+        env:
+          VERSION: ${{ steps.next.outputs.version }}
+          CHANGED: ${{ steps.changed.outputs.changed }}
+        run: |
+          if [ "$CHANGED" != "true" ]; then
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "::error::Version $VERSION already exists."
+            exit 1
+          fi
+          gh release create "$VERSION" --target "$GITHUB_SHA" --title "${GITHUB_REPOSITORY#*/} $VERSION" \
+            --generate-notes --latest
+          { echo "released=true"; echo "version=$VERSION"; } >> "$GITHUB_OUTPUT"
+          echo "### Release $VERSION created on \`${GITHUB_SHA:0:7}\`" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,83 @@
+name: Dry-run a migration on an environment (reusable)
+
+# Runs one migration and its test on the database of the chosen environment, in ONE request that ends with an
+# error on purpose: everything is rolled back and nothing stays in the base. Succeeds only if the test prints
+# the result marker. Wrap it in a manual workflow (workflow_dispatch with ref / migration / test inputs).
+#   jobs:
+#     check:
+#       uses: dadamagouil/devops/.github/workflows/supabase-sql-check-remote.yml@develop
+#       with:
+#         environment: dev
+#         ref: develop
+#         migration: 20260101000000_example.sql
+#         test: example.test.sql
+#       secrets: inherit
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      ref:
+        description: Branch or commit holding the migration and the test
+        type: string
+        default: develop
+      migration:
+        description: Migration file name (in supabase/migrations)
+        type: string
+        required: true
+      test:
+        description: Test file name (in supabase/tests)
+        type: string
+        required: true
+      result-marker:
+        type: string
+        default: RESULT OK
+      runner-labels:
+        type: string
+        default: '["ubuntu-latest"]'
+    secrets:
+      SUPABASE_ACCESS_TOKEN:
+        required: true
+      SUPABASE_PROJECT_REF:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ${{ fromJSON(inputs.runner-labels) }}
+    environment: ${{ inputs.environment }}
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      MIGRATION: ${{ inputs.migration }}
+      TEST: ${{ inputs.test }}
+      MARKER: ${{ inputs.result-marker }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: dadamagouil/devops/.github/actions/prepare-runner@develop
+        with:
+          commands: "git curl jq"
+
+      - name: Run the migration and the test (rolled back at the end)
+        run: |
+          set -u
+          for v in SUPABASE_ACCESS_TOKEN PROJECT_REF; do
+            [ -n "${!v}" ] || { echo "::error::Missing secret: $v"; exit 1; }
+          done
+          # The file names come from workflow inputs: refuse anything that is not a plain file name.
+          case "$MIGRATION$TEST" in */*|*..*) echo "::error::Invalid file name."; exit 1 ;; esac
+          cat "supabase/migrations/$MIGRATION" "supabase/tests/$TEST" > "$RUNNER_TEMP/query.sql"
+          body=$(jq -n --rawfile q "$RUNNER_TEMP/query.sql" '{query: $q}')
+          out=$(curl -sS -X POST "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" -d "$body")
+          echo "$out"
+          echo "$out" | grep -q "$MARKER" || { echo "::error::The test did not print \"$MARKER\"."; exit 1; }
+          {
+            echo "### SQL test passed (rolled back at the end)"
+            echo "$out" | head -c 1500
+          } >> "$GITHUB_STEP_SUMMARY"

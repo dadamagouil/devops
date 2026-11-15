@@ -1,0 +1,104 @@
+name: Deploy Supabase backend (reusable)
+
+# Applies supabase/migrations to an environment and (optionally) deploys the Edge Functions.
+# Two ways to reach the database, picked by the secrets that exist:
+#   - DATABASE_URL (self-hosted Supabase): `supabase db push --db-url`; skipped, without failing, while the
+#     secret is missing;
+#   - SUPABASE_ACCESS_TOKEN + SUPABASE_DB_PASSWORD + SUPABASE_PROJECT_REF (Supabase cloud): `supabase link`
+#     then `supabase db push`; the three are required.
+#   jobs:
+#     deploy:
+#       uses: dadamagouil/devops/.github/workflows/supabase-deploy.yml@develop
+#       with:
+#         environment: dev
+#         functions: "bootstrap-user session-maintenance"
+#       secrets: inherit
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: GitHub environment that holds the secrets
+        type: string
+        required: true
+      functions:
+        description: Edge Functions to deploy (space separated); empty = none
+        type: string
+        default: ""
+      runner-labels:
+        type: string
+        default: '["ubuntu-latest"]'
+    secrets:
+      DATABASE_URL:
+        required: false
+      SUPABASE_ACCESS_TOKEN:
+        required: false
+      SUPABASE_DB_PASSWORD:
+        required: false
+      SUPABASE_PROJECT_REF:
+        required: false
+      FUNCTION_SECRETS:
+        description: >
+          Optional lines NAME=value (one per line) stored as Edge Function secrets
+          (for example CRON_SECRET, a push service account).
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ${{ fromJSON(inputs.runner-labels) }}
+    environment: ${{ inputs.environment }}
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      FUNCTION_SECRETS: ${{ secrets.FUNCTION_SECRETS }}
+      FUNCTIONS: ${{ inputs.functions }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dadamagouil/devops/.github/actions/prepare-runner@develop
+        with:
+          commands: "git curl jq"
+
+      - name: Pick the connection mode
+        id: mode
+        run: |
+          if [ -n "$DATABASE_URL" ]; then
+            echo "mode=url" >> "$GITHUB_OUTPUT"
+          elif [ -n "$SUPABASE_ACCESS_TOKEN" ] && [ -n "$SUPABASE_DB_PASSWORD" ] && [ -n "$PROJECT_REF" ]; then
+            echo "mode=cloud" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No database secret in this environment (DATABASE_URL, or SUPABASE_ACCESS_TOKEN + SUPABASE_DB_PASSWORD + SUPABASE_PROJECT_REF). Deployment skipped."
+            echo "mode=none" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: supabase/setup-cli@v3
+        if: steps.mode.outputs.mode != 'none'
+        with:
+          version: latest
+
+      - name: Migrations (database URL)
+        if: steps.mode.outputs.mode == 'url'
+        run: supabase db push --db-url "$DATABASE_URL"
+
+      - name: Migrations (Supabase cloud)
+        if: steps.mode.outputs.mode == 'cloud'
+        run: |
+          supabase link --project-ref "$PROJECT_REF"
+          supabase db push --remote --yes
+
+      - name: Edge Function secrets
+        if: steps.mode.outputs.mode == 'cloud' && env.FUNCTION_SECRETS != ''
+        run: |
+          printf '%s\n' "$FUNCTION_SECRETS" > "$RUNNER_TEMP/function-secrets.env"
+          supabase secrets set --env-file "$RUNNER_TEMP/function-secrets.env" --yes
+          rm -f "$RUNNER_TEMP/function-secrets.env"
+
+      - name: Edge Functions
+        if: steps.mode.outputs.mode == 'cloud' && env.FUNCTIONS != ''
+        run: |
+          for f in $FUNCTIONS; do
+            supabase functions deploy "$f" --yes
+          done

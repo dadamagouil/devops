@@ -1,0 +1,107 @@
+name: Create a release (reusable)
+
+# Checks the code (format + analyze + tests), then creates the official version: tag vX.Y.Z on the chosen
+# commit and a GitHub release with generated notes. Nothing is deployed here.
+# Wrap it in a manual workflow of the project (workflow_dispatch with bump / version / ref inputs):
+#   jobs:
+#     release:
+#       uses: dadamagouil/devops/.github/workflows/flutter-release.yml@develop
+#       with:
+#         app-dir: app/my_app
+#         flutter-version: "3.35.5"
+#         app-title: My App
+#         bump: ${{ inputs.bump }}
+#         version: ${{ inputs.version }}
+#         ref: ${{ inputs.ref }}
+#       secrets: inherit
+on:
+  workflow_call:
+    inputs:
+      app-dir:
+        type: string
+        required: true
+      flutter-version:
+        type: string
+        required: true
+      app-title:
+        description: Name shown in the release title ("<app-title> vX.Y.Z")
+        type: string
+        required: true
+      bump:
+        description: patch, minor or major (ignored when `version` is set)
+        type: string
+        default: minor
+      version:
+        description: Forced version (for example v1.15.0)
+        type: string
+        default: ""
+      ref:
+        description: Branch or commit to release
+        type: string
+        default: develop
+      deploy-hint:
+        description: Sentence written in the release notes about the next step
+        type: string
+        default: "This release is not deployed yet: run the deploy workflow."
+      runner-labels:
+        type: string
+        default: '["ubuntu-latest"]'
+    secrets:
+      RELEASE_TOKEN:
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ${{ fromJSON(inputs.runner-labels) }}
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+      - uses: dadamagouil/devops/.github/actions/prepare-runner@develop
+        with:
+          commands: "git curl tar xz gh"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ inputs.flutter-version }}
+          channel: stable
+          cache: ${{ runner.environment == 'github-hosted' }}
+
+      - name: Checks
+        working-directory: ${{ inputs.app-dir }}
+        run: |
+          flutter pub get
+          git ls-files '*.dart' | grep -v 'l10n/app_localizations' | xargs dart format --output=none --set-exit-if-changed
+          flutter analyze
+          flutter test
+
+      - id: version
+        uses: dadamagouil/devops/.github/actions/next-version@develop
+        with:
+          bump: ${{ inputs.bump }}
+          version: ${{ inputs.version }}
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+      - name: Create the tag and the release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TITLE: ${{ inputs.app-title }}
+          HINT: ${{ inputs.deploy-hint }}
+        run: |
+          if gh release view "$VERSION" >/dev/null 2>&1 || git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "::error::Version $VERSION already exists."
+            exit 1
+          fi
+          SHA=$(git rev-parse HEAD)
+          printf 'Version: %s\nCommit: %s\n\n%s\n\n' "$VERSION" "$SHA" "$HINT" > notes.md
+          gh release create "$VERSION" --target "$SHA" --title "$TITLE $VERSION" \
+            --notes-file notes.md --generate-notes --latest
+          {
+            echo "### Release $VERSION created"
+            echo "Commit \`$SHA\`. $HINT"
+          } >> "$GITHUB_STEP_SUMMARY"

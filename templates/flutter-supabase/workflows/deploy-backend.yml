@@ -1,0 +1,19 @@
+name: Deploy Supabase backend
+
+on:
+  push:
+    branches: [develop]
+    paths: ["supabase/**", ".github/workflows/deploy-backend.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    uses: dadamagouil/devops/.github/workflows/supabase-deploy.yml@develop
+    with:
+      environment: dev
+      functions: ""   # for example "bootstrap-user session-maintenance"
+      runner-labels: ${{ vars.RUNNER_LABELS || '["ubuntu-latest"]' }}
+    secrets: inherit

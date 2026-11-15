@@ -1,0 +1,26 @@
+name: Next version
+description: Computes the next release tag (vX.Y.Z) from the existing GitHub releases.
+inputs:
+  bump:
+    description: patch, minor or major (ignored when `version` is set)
+    default: minor
+  version:
+    description: Forced version (for example v1.15.0)
+    default: ""
+  token:
+    description: Token used by the GitHub CLI to list releases
+    default: ${{ github.token }}
+outputs:
+  version:
+    description: The computed version, for example v1.15.0
+    value: ${{ steps.compute.outputs.new }}
+runs:
+  using: composite
+  steps:
+    - id: compute
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        BUMP: ${{ inputs.bump }}
+        FORCED: ${{ inputs.version }}
+      run: '"${{ github.action_path }}/next-version.sh" "$BUMP" "$FORCED" >> "$GITHUB_OUTPUT"'

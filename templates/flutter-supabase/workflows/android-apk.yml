@@ -1,0 +1,30 @@
+name: Android APK (dev)
+
+on:
+  push:
+    branches: [develop]
+    paths: ["app/{{app}}/**", ".github/workflows/android-apk.yml"]
+  pull_request:
+    branches: [develop, main]
+    paths: ["app/{{app}}/**", ".github/workflows/android-apk.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # publish the dev-latest pre-release
+
+jobs:
+  apk:
+    uses: dadamagouil/devops/.github/workflows/flutter-android-apk.yml@develop
+    with:
+      app-dir: app/{{app}}
+      flutter-version: "3.35.5"
+      flavor: dev
+      target-platform: android-arm64   # dev APK for 64-bit phones only; empty = all architectures
+      artifact-name: {{app}}-apk-dev
+      release-asset-name: {{app}}-dev.apk
+      package-id: {{com.example.app.dev}}
+      dart-defines: |
+        APP_ENV=dev
+      native-paths-regex: '^(app/{{app}}/(android/|ios/|pubspec\.(yaml|lock))|\.github/workflows/android-apk\.yml)'
+      runner-labels: ${{ vars.RUNNER_LABELS || '["ubuntu-latest"]' }}
+    secrets: inherit

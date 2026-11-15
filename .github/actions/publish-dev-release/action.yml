@@ -1,0 +1,42 @@
+name: Publish development release
+description: >
+  Publishes a build file in a "dev-latest" pre-release that is updated in place (never deleted).
+  Run it from a job that checked out the repository and that has `permissions: contents: write`.
+inputs:
+  source-file:
+    description: Path of the built file (for example the release APK)
+    required: true
+  asset-name:
+    description: File name shown on the release
+    required: true
+  build:
+    description: Build label (for example dev-123)
+    required: true
+  branch:
+    description: Branch that produced the build (shown in the notes)
+    default: ${{ github.ref_name }}
+  tag:
+    description: Pre-release tag
+    default: dev-latest
+  move-tag:
+    description: >
+      "true" moves the tag to the built commit (needs a personal access token as `token`);
+      "false" keeps the tag where it was created and the automatic token is enough.
+    default: "false"
+  token:
+    description: Token used by the GitHub CLI
+    default: ${{ github.token }}
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ github.repository }}
+        SOURCE_FILE: ${{ inputs.source-file }}
+        ASSET_NAME: ${{ inputs.asset-name }}
+        BUILD: ${{ inputs.build }}
+        BRANCH: ${{ inputs.branch }}
+        TAG: ${{ inputs.tag }}
+        MOVE_TAG: ${{ inputs.move-tag }}
+      run: '"${{ github.action_path }}/publish-dev-release.sh"'

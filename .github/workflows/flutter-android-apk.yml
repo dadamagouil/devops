@@ -1,0 +1,209 @@
+name: Android APK (reusable)
+
+# Flutter checks, then a release APK as an artifact, then (optional) the "dev-latest" pre-release.
+# Options: skip the long APK build on pull requests that do not touch the native side, optional Firebase config,
+# and a publication that needs a personal token only when the tag must move.
+#   jobs:
+#     apk:
+#       uses: dadamagouil/devops/.github/workflows/flutter-android-apk.yml@develop
+#       with:
+#         app-dir: app/my_app
+#         flutter-version: "3.35.5"
+#         flavor: dev
+#         artifact-name: my-app-apk-dev
+#         release-asset-name: my-app-dev.apk
+#         dart-defines: "APP_ENV=dev"
+#       secrets: inherit
+on:
+  workflow_call:
+    inputs:
+      app-dir:
+        type: string
+        required: true
+      flutter-version:
+        type: string
+        required: true
+      flavor:
+        description: Android flavor (empty = no flavor)
+        type: string
+        default: dev
+      environment:
+        description: GitHub environment holding SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY
+        type: string
+        default: dev
+      artifact-name:
+        description: Name of the workflow artifact (the run number is appended)
+        type: string
+        required: true
+      release-asset-name:
+        description: File name on the dev-latest release; empty = do not publish
+        type: string
+        default: ""
+      dart-defines:
+        description: Extra --dart-define values, one NAME=value per line (the Supabase ones are added by the workflow)
+        type: string
+        default: ""
+      native-paths-regex:
+        description: >
+          Extended regex of paths (relative to the repository root) that justify building the APK on a pull
+          request. Empty = always build. Without a match only the checks run (the build takes 10+ minutes).
+        type: string
+        default: ""
+      target-platform:
+        description: >
+          Native architecture(s) of the APK (`flutter build apk --target-platform`). The dev APK is built for
+          arm64 only by default: one native compilation instead of three, so less memory, less time and a lighter file.
+          It runs on every recent (64-bit) phone, not on a 32-bit phone nor an x86_64 emulator. Leave empty for
+          all architectures; production (Play Store bundle) must stay multi-architecture.
+        type: string
+        default: android-arm64
+      package-id:
+        description: Android application id, only used to validate GOOGLE_SERVICES_JSON
+        type: string
+        default: ""
+      move-tag:
+        description: Move the dev-latest tag to each build (needs RELEASE_TOKEN)
+        type: boolean
+        default: false
+      runner-labels:
+        type: string
+        default: '["ubuntu-latest"]'
+    secrets:
+      SUPABASE_URL:
+        required: false
+      SUPABASE_PUBLISHABLE_KEY:
+        required: false
+      GOOGLE_SERVICES_JSON:
+        required: false
+      RELEASE_TOKEN:
+        description: Personal access token (Contents + Workflows write); only needed with move-tag
+        required: false
+
+permissions:
+  contents: write   # publish the dev-latest pre-release
+
+jobs:
+  build:
+    runs-on: ${{ fromJSON(inputs.runner-labels) }}
+    # The GitHub environment's secrets win over the repository's.
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: android-apk-${{ github.ref }}
+      # A pushed pull request cancels its previous run; on a long-lived branch let the run finish (publication).
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.app-dir }}
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+          # Full history: used to know whether a pull request touches the native side.
+          fetch-depth: 0
+
+      - uses: dadamagouil/devops/.github/actions/prepare-runner@develop
+        with:
+          commands: "git curl unzip zip tar xz"
+          android: "true"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ inputs.flutter-version }}
+          channel: stable
+          cache: ${{ runner.environment == 'github-hosted' }}
+
+      - name: Firebase config (optional, for push notifications)
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          PACKAGE_ID: ${{ inputs.package-id }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "::notice::GOOGLE_SERVICES_JSON missing: build without push notifications."
+          elif [ -z "$PACKAGE_ID" ] || echo "$GOOGLE_SERVICES_JSON" | grep -q "\"package_name\": *\"$PACKAGE_ID\""; then
+            echo "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+          else
+            echo "::warning::GOOGLE_SERVICES_JSON does not contain the Android app '$PACKAGE_ID' (different package name in Firebase?). Build WITHOUT push."
+          fi
+
+      - name: Check the Supabase secrets
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_PUBLISHABLE_KEY" ]; then
+            if [ "$EVENT" = "pull_request" ]; then
+              echo "::warning::SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY missing: the APK builds but cannot connect."
+            else
+              echo "::error::SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY missing (Settings > Secrets and variables > Actions > *Secrets*, exact names). APK not published."
+              exit 1
+            fi
+          fi
+
+      - run: flutter pub get
+      - name: Format
+        run: git ls-files '*.dart' | grep -v 'l10n/app_localizations' | xargs dart format --output=none --set-exit-if-changed
+      - run: flutter analyze
+      - run: flutter test
+
+      - name: Should the APK be built?
+        id: apk
+        working-directory: .
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
+          NATIVE_REGEX: ${{ inputs.native-paths-regex }}
+        run: |
+          build=true
+          if [ "$EVENT" = "pull_request" ] && [ -n "$NATIVE_REGEX" ]; then
+            changed=$(git diff --name-only "origin/$BASE...HEAD" 2>/dev/null || echo "?")
+            if [ "$changed" != "?" ] && ! echo "$changed" | grep -qE "$NATIVE_REGEX"; then
+              build=false
+              echo "::notice::Pull request without native changes: APK not built (checks done)."
+            fi
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
+      - name: Build the APK
+        if: steps.apk.outputs.build == 'true'
+        env:
+          FLAVOR: ${{ inputs.flavor }}
+          TARGET_PLATFORM: ${{ inputs.target-platform }}
+          EXTRA_DEFINES: ${{ inputs.dart-defines }}
+        run: |
+          args=(--release --build-name="0.0.${GITHUB_RUN_NUMBER}-dev" --build-number="$GITHUB_RUN_NUMBER"
+                --dart-define=SUPABASE_URL="$SUPABASE_URL"
+                --dart-define=SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY")
+          [ -n "$FLAVOR" ] && args+=(--flavor "$FLAVOR")
+          [ -n "$TARGET_PLATFORM" ] && args+=(--target-platform "$TARGET_PLATFORM")
+          while IFS= read -r line; do
+            [ -n "$line" ] && args+=("--dart-define=$line")
+          done <<< "$EXTRA_DEFINES"
+          flutter build apk "${args[@]}"
+
+      - name: Locate the APK
+        if: steps.apk.outputs.build == 'true'
+        id: file
+        env:
+          FLAVOR: ${{ inputs.flavor }}
+        run: |
+          name="app-release.apk"
+          [ -n "$FLAVOR" ] && name="app-${FLAVOR}-release.apk"
+          echo "path=${{ inputs.app-dir }}/build/app/outputs/flutter-apk/$name" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        if: steps.apk.outputs.build == 'true'
+        with:
+          name: ${{ inputs.artifact-name }}-${{ github.run_number }}
+          path: ${{ steps.file.outputs.path }}
+
+      # Outside pull requests, the dev-latest pre-release is updated in place.
+      - uses: dadamagouil/devops/.github/actions/publish-dev-release@develop
+        if: steps.apk.outputs.build == 'true' && github.event_name != 'pull_request' && inputs.release-asset-name != ''
+        with:
+          source-file: ${{ steps.file.outputs.path }}
+          asset-name: ${{ inputs.release-asset-name }}
+          build: dev-${{ github.run_number }}
+          move-tag: ${{ inputs.move-tag }}
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}

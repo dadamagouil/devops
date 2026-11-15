@@ -1,0 +1,27 @@
+name: SQL tests
+description: >
+  Applies supabase/migrations on a throw-away Postgres and runs supabase/tests/*.test.sql.
+  The caller provides the Postgres (a `services:` container) and checks out its repository first.
+inputs:
+  database-url:
+    description: Connection string of the empty Postgres database
+    default: postgresql://postgres:postgres@localhost:5432/postgres
+  supabase-dir:
+    description: Folder holding migrations/ and tests/
+    default: supabase
+  stub:
+    description: Load the Supabase stub (roles + auth schema) first; keep "1" on a plain Postgres
+    default: "1"
+  result-marker:
+    description: Text a test must print to count as passed
+    default: RESULT OK
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        STUB: ${{ inputs.stub }}
+        SUPABASE_DIR: ${{ inputs.supabase-dir }}
+        RESULT_MARKER: ${{ inputs.result-marker }}
+        DATABASE_URL: ${{ inputs.database-url }}
+      run: '"${{ github.action_path }}/run.sh" "$DATABASE_URL"'

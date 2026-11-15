@@ -1,0 +1,35 @@
+name: Create a release
+
+# Run by hand: Actions → Create a release → Run workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version type (ignored when a version is forced)
+        type: choice
+        options: [minor, patch, major]
+        default: minor
+      version:
+        description: Forced version (optional, for example v1.15.0)
+        type: string
+        required: false
+      ref:
+        description: Branch or commit to release
+        type: string
+        default: develop
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    uses: dadamagouil/devops/.github/workflows/flutter-release.yml@develop
+    with:
+      app-dir: app/{{app}}
+      flutter-version: "3.35.5"
+      app-title: {{App name}}
+      bump: ${{ inputs.bump }}
+      version: ${{ inputs.version }}
+      ref: ${{ inputs.ref }}
+      runner-labels: ${{ vars.RUNNER_LABELS || '["ubuntu-latest"]' }}
+    secrets: inherit

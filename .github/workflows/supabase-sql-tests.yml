@@ -1,0 +1,42 @@
+name: SQL tests (reusable)
+
+# Applies supabase/migrations on a throw-away Postgres (with a minimal imitation of Supabase) and runs
+# supabase/tests/*.test.sql. No secret needed.
+#   jobs:
+#     sql:
+#       uses: dadamagouil/devops/.github/workflows/supabase-sql-tests.yml@develop
+on:
+  workflow_call:
+    inputs:
+      supabase-dir:
+        type: string
+        default: supabase
+      postgres-image:
+        type: string
+        default: postgres:16
+      result-marker:
+        description: Text a test must print to count as passed
+        type: string
+        default: RESULT OK
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # Always GitHub-hosted: the throw-away Postgres below is a service container (Docker).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: ${{ inputs.postgres-image }}
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dadamagouil/devops/.github/actions/supabase-sql-tests@develop
+        with:
+          supabase-dir: ${{ inputs.supabase-dir }}
+          result-marker: ${{ inputs.result-marker }}

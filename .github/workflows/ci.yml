@@ -1,0 +1,22 @@
+name: CI
+
+# This repository checks itself with its own reusable workflow (workflow files + secrets).
+on:
+  push:
+    branches: [develop]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    uses: ./.github/workflows/quality.yml
+    with:
+      # Repository variable RUNNER_LABELS (JSON list) picks the runner; GitHub runners when it is absent.
+      runner-labels: ${{ vars.RUNNER_LABELS || '["ubuntu-latest"]' }}

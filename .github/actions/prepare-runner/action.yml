@@ -1,0 +1,59 @@
+name: Prepare runner
+description: >
+  Checks that the required tools exist on the runner (GitHub-hosted runners ship many of them, a self-hosted
+  runner does not) and installs what can be installed without admin rights (Node.js, Java, Android SDK).
+inputs:
+  commands:
+    description: Commands that must exist on the runner (space separated)
+    default: "git curl tar"
+  node:
+    description: Install Node.js (for wrangler / npx)
+    default: "false"
+  node-version:
+    description: Node.js version installed when `node` is true
+    default: "20"
+  android:
+    description: Install Java and the Android SDK (needed to build an APK / AAB)
+    default: "false"
+  java-version:
+    description: Java version installed when `android` is true
+    default: "17"
+runs:
+  using: composite
+  steps:
+    - name: Check the runner tools
+      shell: bash
+      env:
+        CMDS: ${{ inputs.commands }}
+      run: |
+        missing=""
+        for c in $CMDS; do
+          command -v "$c" >/dev/null 2>&1 || missing="$missing $c"
+        done
+        if [ -n "$missing" ]; then
+          echo "::error::Tools missing on the runner:$missing. Install them on the machine (sudo apt install ...) or go back to GitHub-hosted runners (repository variable RUNNER_LABELS = [\"ubuntu-latest\"])."
+          exit 1
+        fi
+    - name: Let git read folders owned by another user
+      shell: bash
+      # On a containerised runner (Coolify, Docker) downloaded tools (Flutter...) often belong to another user
+      # than the job: git then refuses to read them ("detected dubious ownership") and `flutter pub get` fails.
+      # The runner is dedicated and disposable, so trusting every folder is acceptable.
+      run: git config --global --add safe.directory '*'
+    - name: Install Node.js
+      if: inputs.node == 'true'
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+    - name: Install Java (needed by the Android SDK)
+      if: inputs.android == 'true'
+      uses: actions/setup-java@v6
+      with:
+        distribution: temurin
+        java-version: ${{ inputs.java-version }}
+    - name: Install the Android SDK
+      if: inputs.android == 'true'
+      uses: android-actions/setup-android@v3
+      with:
+        # By default the action also asks for the "tools" package, which no longer exists; Gradle downloads the rest.
+        packages: "platform-tools"

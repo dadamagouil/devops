@@ -1,0 +1,48 @@
+name: Flutter checks (reusable)
+
+# Format (dart format), static analysis (flutter analyze) and tests (flutter test) of a Flutter app.
+#   jobs:
+#     flutter:
+#       uses: dadamagouil/devops/.github/workflows/flutter-checks.yml@develop
+#       with:
+#         app-dir: app/my_app
+#         flutter-version: "3.35.5"
+on:
+  workflow_call:
+    inputs:
+      app-dir:
+        description: Folder of the Flutter app (holds pubspec.yaml)
+        type: string
+        required: true
+      flutter-version:
+        description: Flutter version; keep it identical in every workflow of the project
+        type: string
+        required: true
+      runner-labels:
+        type: string
+        default: '["ubuntu-latest"]'
+
+permissions:
+  contents: read
+
+jobs:
+  flutter:
+    runs-on: ${{ fromJSON(inputs.runner-labels) }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.app-dir }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dadamagouil/devops/.github/actions/prepare-runner@develop
+        with:
+          commands: "git curl tar xz"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ inputs.flutter-version }}
+          channel: stable
+          cache: ${{ runner.environment == 'github-hosted' }}
+      - run: flutter pub get
+      - name: Format
+        run: git ls-files '*.dart' | grep -v 'l10n/app_localizations' | xargs dart format --output=none --set-exit-if-changed
+      - run: flutter analyze
+      - run: flutter test
