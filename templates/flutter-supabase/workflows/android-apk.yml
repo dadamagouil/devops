@@ -14,9 +14,9 @@ permissions:
 
 jobs:
   apk:
-    uses: dadamagouil/devops/.github/workflows/flutter-android-apk.yml@develop
+    uses: dadamagouil/devops/.github/workflows/flutter-android-apk.yml@v1.0.2
     with:
-      devops-ref: develop   # to freeze: the same tag as the @ above (for example v1.0.1)
+      devops-ref: v1.0.2   # same version as the @ above; change both together to upgrade
       app-dir: app/{{app}}
       flutter-version: "3.35.5"
       flavor: dev
