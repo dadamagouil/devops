@@ -16,6 +16,7 @@ jobs:
   apk:
     uses: dadamagouil/devops/.github/workflows/flutter-android-apk.yml@develop
     with:
+      devops-ref: develop   # to freeze: the same tag as the @ above (for example v1.0.1)
       app-dir: app/{{app}}
       flutter-version: "3.35.5"
       flavor: dev

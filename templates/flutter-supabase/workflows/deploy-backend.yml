@@ -13,6 +13,7 @@ jobs:
   deploy:
     uses: dadamagouil/devops/.github/workflows/supabase-deploy.yml@develop
     with:
+      devops-ref: develop   # to freeze: the same tag as the @ above (for example v1.0.1)
       environment: dev
       functions: ""   # for example "bootstrap-user session-maintenance"
       runner-labels: ${{ vars.RUNNER_LABELS || '["ubuntu-latest"]' }}

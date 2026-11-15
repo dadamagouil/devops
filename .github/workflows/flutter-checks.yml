@@ -10,6 +10,12 @@ name: Flutter checks (reusable)
 on:
   workflow_call:
     inputs:
+      devops-ref:
+        description: >
+          Version of dadamagouil/devops whose building blocks (actions) this workflow uses. To freeze everything,
+          give the same tag as the `@` of this workflow, for example `v1.0.1`. Default: develop.
+        type: string
+        default: develop
       app-dir:
         description: Folder of the Flutter app (holds pubspec.yaml)
         type: string
@@ -33,7 +39,13 @@ jobs:
         working-directory: ${{ inputs.app-dir }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dadamagouil/devops/.github/actions/prepare-runner@develop
+      - name: Get the devops building blocks (same version as this workflow)
+        uses: actions/checkout@v7
+        with:
+          repository: dadamagouil/devops
+          ref: ${{ inputs.devops-ref }}
+          path: .devops
+      - uses: ./.devops/.github/actions/prepare-runner
         with:
           commands: "git curl tar xz"
       - uses: subosito/flutter-action@v2

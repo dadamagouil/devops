@@ -17,4 +17,5 @@ jobs:
   quality:
     uses: dadamagouil/devops/.github/workflows/quality.yml@develop
     with:
+      devops-ref: develop   # to freeze: the same tag as the @ above (for example v1.0.1)
       runner-labels: ${{ vars.RUNNER_LABELS || '["ubuntu-latest"]' }}

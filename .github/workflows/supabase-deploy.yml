@@ -16,6 +16,12 @@ name: Deploy Supabase backend (reusable)
 on:
   workflow_call:
     inputs:
+      devops-ref:
+        description: >
+          Version of dadamagouil/devops whose building blocks (actions) this workflow uses. To freeze everything,
+          give the same tag as the `@` of this workflow, for example `v1.0.1`. Default: develop.
+        type: string
+        default: develop
       environment:
         description: GitHub environment that holds the secrets
         type: string
@@ -58,7 +64,13 @@ jobs:
       FUNCTIONS: ${{ inputs.functions }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dadamagouil/devops/.github/actions/prepare-runner@develop
+      - name: Get the devops building blocks (same version as this workflow)
+        uses: actions/checkout@v7
+        with:
+          repository: dadamagouil/devops
+          ref: ${{ inputs.devops-ref }}
+          path: .devops
+      - uses: ./.devops/.github/actions/prepare-runner
         with:
           commands: "git curl jq"
 
