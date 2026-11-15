@@ -17,6 +17,12 @@ name: Android APK (reusable)
 on:
   workflow_call:
     inputs:
+      devops-ref:
+        description: >
+          Version of dadamagouil/devops whose building blocks (actions) this workflow uses. To freeze everything,
+          give the same tag as the `@` of this workflow, for example `v1.0.1`. Default: develop.
+        type: string
+        default: develop
       app-dir:
         type: string
         required: true
@@ -104,7 +110,13 @@ jobs:
           # Full history: used to know whether a pull request touches the native side.
           fetch-depth: 0
 
-      - uses: dadamagouil/devops/.github/actions/prepare-runner@develop
+      - name: Get the devops building blocks (same version as this workflow)
+        uses: actions/checkout@v7
+        with:
+          repository: dadamagouil/devops
+          ref: ${{ inputs.devops-ref }}
+          path: .devops
+      - uses: ./.devops/.github/actions/prepare-runner
         with:
           commands: "git curl unzip zip tar xz"
           android: "true"
@@ -199,7 +211,7 @@ jobs:
           path: ${{ steps.file.outputs.path }}
 
       # Outside pull requests, the dev-latest pre-release is updated in place.
-      - uses: dadamagouil/devops/.github/actions/publish-dev-release@develop
+      - uses: ./.devops/.github/actions/publish-dev-release
         if: steps.apk.outputs.build == 'true' && github.event_name != 'pull_request' && inputs.release-asset-name != ''
         with:
           source-file: ${{ steps.file.outputs.path }}

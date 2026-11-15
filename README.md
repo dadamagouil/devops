@@ -87,7 +87,17 @@ jobs:
       runner-labels: ${{ vars.RUNNER_LABELS || '["ubuntu-latest"]' }}
 ```
 
-Pin `@develop` to a tag (`@v1`) once releases exist, so a change here never breaks a project by surprise.
+**Freezing a version.** To be sure a change here never breaks a project by surprise, give a release tag twice: in the `@`
+of the workflow and in its `devops-ref` input (the version used for the building blocks the workflow calls):
+
+```yaml
+    uses: dadamagouil/devops/.github/workflows/quality.yml@v1.0.1
+    with:
+      devops-ref: v1.0.1
+```
+
+Both are needed because GitHub gives a called workflow no way to know its own version. With `@develop` and
+`devops-ref: develop` (the default) a project always gets the latest.
 
 ### 3. Configure the GitHub side
 
@@ -130,8 +140,8 @@ SUPABASE_DIR=supabase STUB=1 .github/actions/supabase-sql-tests/run.sh "postgres
 ## Versions
 
 Releases are tags `vX.Y.Z` created by the `Release` workflow (Actions → Release → Run workflow), only when
-something changed since the last one. Callers can pin a version instead of `@develop`:
-`uses: dadamagouil/devops/.github/workflows/quality.yml@v1.0.0`. Use `patch` for fixes and documentation, `minor`
+something changed since the last one. Callers can freeze a version instead of following `develop` (see *Freezing a version* above: the tag goes in the
+`@` and in `devops-ref`). Use `patch` for fixes and documentation, `minor`
 for a new workflow, action or input, `major` for a change that breaks callers.
 
 ## License

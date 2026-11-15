@@ -16,3 +16,5 @@ permissions:
 jobs:
   sql:
     uses: dadamagouil/devops/.github/workflows/supabase-sql-tests.yml@develop
+    with:
+      devops-ref: develop   # to freeze: the same tag as the @ above (for example v1.0.1)
