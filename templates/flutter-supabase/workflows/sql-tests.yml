@@ -15,6 +15,6 @@ permissions:
 
 jobs:
   sql:
-    uses: dadamagouil/devops/.github/workflows/supabase-sql-tests.yml@develop
+    uses: dadamagouil/devops/.github/workflows/supabase-sql-tests.yml@v1.0.2
     with:
-      devops-ref: develop   # to freeze: the same tag as the @ above (for example v1.0.1)
+      devops-ref: v1.0.2   # same version as the @ above; change both together to upgrade

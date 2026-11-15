@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   quality:
-    uses: dadamagouil/devops/.github/workflows/quality.yml@develop
+    uses: dadamagouil/devops/.github/workflows/quality.yml@v1.0.2
     with:
-      devops-ref: develop   # to freeze: the same tag as the @ above (for example v1.0.1)
+      devops-ref: v1.0.2   # same version as the @ above; change both together to upgrade
       runner-labels: ${{ vars.RUNNER_LABELS || '["ubuntu-latest"]' }}

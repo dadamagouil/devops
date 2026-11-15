@@ -82,22 +82,23 @@ on:
   pull_request:
 jobs:
   quality:
-    uses: dadamagouil/devops/.github/workflows/quality.yml@develop
+    uses: dadamagouil/devops/.github/workflows/quality.yml@v1.0.2
     with:
+      devops-ref: v1.0.2   # same version as the @ above
       runner-labels: ${{ vars.RUNNER_LABELS || '["ubuntu-latest"]' }}
 ```
 
-**Freezing a version.** To be sure a change here never breaks a project by surprise, give a release tag twice: in the `@`
+**Frozen version.** The examples above are frozen on a release so that a change here never breaks a project by surprise: the tag is given twice, in the `@`
 of the workflow and in its `devops-ref` input (the version used for the building blocks the workflow calls):
 
 ```yaml
-    uses: dadamagouil/devops/.github/workflows/quality.yml@v1.0.1
+    uses: dadamagouil/devops/.github/workflows/quality.yml@v1.0.2
     with:
-      devops-ref: v1.0.1
+      devops-ref: v1.0.2
 ```
 
-Both are needed because GitHub gives a called workflow no way to know its own version. With `@develop` and
-`devops-ref: develop` (the default) a project always gets the latest.
+Both are needed because GitHub gives a called workflow no way to know its own version. To upgrade, change both
+together. With `@develop` and `devops-ref: develop` (the default) a project always gets the latest.
 
 ### 3. Configure the GitHub side
 
@@ -122,10 +123,10 @@ Running pull-request code on your own machine is only acceptable on a **private*
 ### 5. Call the actions directly (optional)
 
 ```yaml
-- uses: dadamagouil/devops/.github/actions/prepare-runner@develop
+- uses: dadamagouil/devops/.github/actions/prepare-runner@v1.0.2
   with: { commands: "git curl tar xz", android: "true" }
 - id: version
-  uses: dadamagouil/devops/.github/actions/next-version@develop
+  uses: dadamagouil/devops/.github/actions/next-version@v1.0.2
   with: { bump: minor }
 ```
 
